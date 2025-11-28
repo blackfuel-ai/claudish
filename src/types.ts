@@ -32,6 +32,7 @@ export interface ClaudishConfig {
   anthropicApiKey?: string; // Required in monitor mode
   agent?: string; // Agent to use for execution (e.g., "frontend:developer")
   freeOnly?: boolean; // Show only free models in selector
+  profile?: string; // Profile name to use for model mapping
   claudeArgs: string[];
 
   // Model Mapping
@@ -39,6 +40,11 @@ export interface ClaudishConfig {
   modelSonnet?: string;
   modelHaiku?: string;
   modelSubagent?: string;
+
+  // Cost tracking
+  costTracking?: boolean;
+  auditCosts?: boolean;
+  resetCosts?: boolean;
 }
 
 // Anthropic API Types

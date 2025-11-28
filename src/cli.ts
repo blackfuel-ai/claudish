@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync } from
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { fuzzyScore } from "./utils.js";
+import { getProfile, getDefaultProfile, getModelMapping } from "./profile-config.js";
 
 // Read version from package.json
 const __filename = fileURLToPath(import.meta.url);
@@ -92,7 +93,7 @@ export async function parseArgs(args: string[]): Promise<ClaudishConfig> {
     } else if (arg === "--model-subagent") {
       const val = args[++i];
       if (val) config.modelSubagent = val;
-    } else if (arg === "--port" || arg === "-p") {
+    } else if (arg === "--port") {
       const portArg = args[++i];
       if (!portArg) {
         console.error("--port requires a value");
@@ -131,6 +132,13 @@ export async function parseArgs(args: string[]): Promise<ClaudishConfig> {
       config.stdin = true;
     } else if (arg === "--free") {
       config.freeOnly = true;
+    } else if (arg === "--profile" || arg === "-p") {
+      const profileArg = args[++i];
+      if (!profileArg) {
+        console.error("--profile requires a profile name");
+        process.exit(1);
+      }
+      config.profile = profileArg;
     } else if (arg === "--cost-tracker") {
       // Enable cost tracking for this session
       config.costTracking = true;
@@ -255,6 +263,26 @@ export async function parseArgs(args: string[]): Promise<ClaudishConfig> {
   }
   if (config.jsonOutput) {
     config.quiet = true; // JSON output mode is always quiet
+  }
+
+  // Apply profile model mappings (profile < CLI flags < env vars for override order)
+  // Profile provides defaults, CLI flags override, env vars override CLI
+  if (config.profile || !config.modelOpus || !config.modelSonnet || !config.modelHaiku || !config.modelSubagent) {
+    const profileModels = getModelMapping(config.profile);
+
+    // Apply profile models only if not set by CLI flags
+    if (!config.modelOpus && profileModels.opus) {
+      config.modelOpus = profileModels.opus;
+    }
+    if (!config.modelSonnet && profileModels.sonnet) {
+      config.modelSonnet = profileModels.sonnet;
+    }
+    if (!config.modelHaiku && profileModels.haiku) {
+      config.modelHaiku = profileModels.haiku;
+    }
+    if (!config.modelSubagent && profileModels.subagent) {
+      config.modelSubagent = profileModels.subagent;
+    }
   }
 
   return config as ClaudishConfig;
@@ -733,7 +761,8 @@ USAGE:
 OPTIONS:
   -i, --interactive        Run in interactive mode (default when no prompt given)
   -m, --model <model>      OpenRouter model to use (required for single-shot mode)
-  -p, --port <port>        Proxy server port (default: random)
+  -p, --profile <name>     Use named profile for model mapping (default: uses default profile)
+  --port <port>            Proxy server port (default: random)
   -d, --debug              Enable debug logging to file (logs/claudish_*.log)
   --log-level <level>      Log verbosity: debug (full), info (truncated), minimal (labels only)
   -q, --quiet              Suppress [claudish] log messages (default in single-shot mode)
@@ -756,6 +785,15 @@ OPTIONS:
   -h, --help               Show this help message
   --help-ai                Show AI agent usage guide (file-based patterns, sub-agents)
   --init                   Install Claudish skill in current project (.claude/skills/)
+
+PROFILE MANAGEMENT:
+  claudish init            Setup wizard - create config and first profile
+  claudish profile list    List all profiles
+  claudish profile add     Add a new profile
+  claudish profile remove  Remove a profile (interactive or claudish profile remove <name>)
+  claudish profile use     Set default profile (interactive or claudish profile use <name>)
+  claudish profile show    Show profile details (default profile or claudish profile show <name>)
+  claudish profile edit    Edit a profile (interactive or claudish profile edit <name>)
 
 MODEL MAPPING (per-role override):
   --model-opus <model>     Model for Opus role (planning, complex tasks)
@@ -813,6 +851,10 @@ EXAMPLES:
 
   # Per-role model mapping (use different models for different Claude Code roles)
   claudish --model-opus openai/gpt-5 --model-sonnet x-ai/grok-code-fast-1 --model-haiku minimax/minimax-m2
+
+  # Use named profiles for pre-configured model mappings
+  claudish -p frontend "implement component"
+  claudish --profile debug "investigate error"
 
   # Hybrid: Native Anthropic for Opus, OpenRouter for Sonnet/Haiku
   claudish --model-opus claude-3-opus-20240229 --model-sonnet x-ai/grok-code-fast-1

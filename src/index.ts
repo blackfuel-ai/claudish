@@ -7,9 +7,19 @@ config(); // Loads .env from current working directory
 // Check for MCP mode before loading heavy dependencies
 const isMcpMode = process.argv.includes("--mcp");
 
+// Check for profile management commands
+const args = process.argv.slice(2);
+const firstArg = args[0];
+
 if (isMcpMode) {
   // MCP server mode - dynamic import to keep CLI fast
   import("./mcp-server.js").then((mcp) => mcp.startMcpServer());
+} else if (firstArg === "init") {
+  // Profile setup wizard
+  import("./profile-commands.js").then((pc) => pc.initCommand());
+} else if (firstArg === "profile") {
+  // Profile management commands
+  import("./profile-commands.js").then((pc) => pc.profileCommand(args.slice(1)));
 } else {
   // CLI mode
   runCli();
@@ -22,7 +32,7 @@ async function runCli() {
   const { checkClaudeInstalled, runClaudeWithProxy } = await import("./claude-runner.js");
   const { parseArgs, getVersion } = await import("./cli.js");
   const { DEFAULT_PORT_RANGE } = await import("./config.js");
-  const { selectModelInteractively, promptForApiKey } = await import("./simple-selector.js");
+  const { selectModel, promptForApiKey } = await import("./model-selector.js");
   const { initLogger, getLogFilePath } = await import("./logger.js");
   const { findAvailablePort } = await import("./port-manager.js");
   const { createProxyServer } = await import("./proxy-server.js");
@@ -80,7 +90,7 @@ async function runCli() {
 
     // Show interactive model selector ONLY in interactive mode when model not specified
     if (cliConfig.interactive && !cliConfig.monitor && !cliConfig.model) {
-      cliConfig.model = await selectModelInteractively({ freeOnly: cliConfig.freeOnly });
+      cliConfig.model = await selectModel({ freeOnly: cliConfig.freeOnly });
       console.log(""); // Empty line after selection
     }
 

@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Claudish — Claude Code. Any Model.</title>
+    <meta name="description" content="Unlock 580+ AI models in the world's most powerful coding agent. Run Grok, Gemini, GPT, DeepSeek natively. Start completely free." />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://claudish.com/" />
+    <meta property="og:title" content="Claudish — Claude Code. Any Model." />
+    <meta property="og:description" content="Unlock 580+ AI models in the world's most powerful coding agent. Run Grok, Gemini, GPT, DeepSeek natively. Start completely free." />
+    <meta property="og:image" content="https://claudish.com/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:site_name" content="Claudish" />
+    <meta property="og:locale" content="en_US" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content="https://claudish.com/" />
+    <meta name="twitter:title" content="Claudish — Claude Code. Any Model." />
+    <meta name="twitter:description" content="Unlock 580+ AI models in the world's most powerful coding agent. Run Grok, Gemini, GPT, DeepSeek natively. Start completely free." />
+    <meta name="twitter:image" content="https://claudish.com/og-image.png" />
+    <meta name="twitter:image:alt" content="Claudish - Claude Code with 580+ AI models via OpenRouter" />
+
+    <!-- Additional SEO -->
+    <meta name="theme-color" content="#0f0f0f" />
+    <meta name="keywords" content="Claude Code, AI coding, Grok, Gemini, GPT, DeepSeek, OpenRouter, AI agent, coding assistant, LLM" />
+    <meta name="author" content="MadAppGang" />
+    <link rel="canonical" href="https://claudish.com/" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&family=Caveat:wght@400..700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              mono: ['JetBrains Mono', 'monospace'],
+              hand: ['Caveat', 'cursive'],
+            },
+            colors: {
+              claude: {
+                bg: '#0f0f0f',
+                accent: '#d97757',
+                secondary: '#333333',
+                dim: '#666666',
+                success: '#3fb950',
+                ish: '#00D4AA'
+              }
+            },
+            animation: {
+              'cursor-blink': 'cursor-blink 1s step-end infinite',
+              'float': 'float 6s ease-in-out infinite',
+              'fadeIn': 'fadeIn 0.5s ease-out forwards',
+              'pulse': 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              'writeIn': 'writeIn 0.8s ease-out 0.5s forwards',
+              'strikethrough': 'strikethrough 0.4s ease-out forwards',
+              'draw': 'draw 1s ease-out forwards',
+              'flow-right': 'flow-right 1.5s linear infinite',
+              'flow-left': 'flow-left 1.5s linear infinite',
+              'flow-down': 'flow-down 1.5s linear infinite',
+              'flow-up': 'flow-up 1.5s linear infinite',
+            },
+            keyframes: {
+              'cursor-blink': {
+                '0%, 100%': { opacity: '1' },
+                '50%': { opacity: '0' },
+              },
+              'float': {
+                '0%, 100%': { transform: 'translateY(0)' },
+                '50%': { transform: 'translateY(-10px)' },
+              },
+              'fadeIn': {
+                '0%': { opacity: '0', transform: 'translateY(10px)' },
+                '100%': { opacity: '1', transform: 'translateY(0)' },
+              },
+              'writeIn': {
+                '0%': { 
+                  opacity: '0', 
+                  transform: 'rotate(-10deg) translateX(-10px)',
+                  clipPath: 'inset(0 100% 0 0)'
+                },
+                '100%': { 
+                  opacity: '1', 
+                  transform: 'rotate(-6deg) translateX(0)',
+                  clipPath: 'inset(0 0 0 0)'
+                }
+              },
+              'strikethrough': {
+                '0%': { width: '0%' },
+                '100%': { width: '100%' },
+              },
+              'draw': {
+                '0%': { strokeDashoffset: '1000' },
+                '100%': { strokeDashoffset: '0' },
+              },
+              'flow-right': {
+                '0%': { transform: 'translateX(-100%)', opacity: '0' },
+                '50%': { opacity: '1' },
+                '100%': { transform: 'translateX(100%)', opacity: '0' },
+              },
+              'flow-left': {
+                '0%': { transform: 'translateX(100%)', opacity: '0' },
+                '50%': { opacity: '1' },
+                '100%': { transform: 'translateX(-100%)', opacity: '0' },
+              },
+              'flow-down': {
+                '0%': { transform: 'translateY(-100%)', opacity: '0' },
+                '50%': { opacity: '1' },
+                '100%': { transform: 'translateY(100%)', opacity: '0' },
+              },
+              'flow-up': {
+                '0%': { transform: 'translateY(100%)', opacity: '0' },
+                '50%': { opacity: '1' },
+                '100%': { transform: 'translateY(-100%)', opacity: '0' },
+              }
+            }
+          },
+        },
+      }
+    </script>
+    <style>
+      body {
+        background-color: #0f0f0f;
+        color: #e6e6e6;
+        overflow-x: hidden;
+      }
+      .perspective-container {
+        perspective: 1200px;
+      }
+      .preserve-3d {
+        transform-style: preserve-3d;
+      }
+      /* Hide scrollbar for Chrome, Safari and Opera */
+      .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+      }
+      /* Hide scrollbar for IE, Edge and Firefox */
+      .scrollbar-hide {
+          -ms-overflow-style: none;  /* IE and Edge */
+          scrollbar-width: none;  /* Firefox */
+      }
+      
+      .strikethrough-line::after {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 50%;
+        height: 2px;
+        background-color: #6b7280; /* gray-500 */
+        width: 0%;
+        animation: strikethrough 0.4s ease-out forwards;
+        animation-delay: 0.2s; /* slight delay after text appears */
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>

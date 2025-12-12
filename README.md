@@ -24,46 +24,43 @@
 
 ## Installation
 
-### Prerequisites
-
-- **Node.js 18+** or **Bun 1.0+** - JavaScript runtime (either works!)
-- [Claude Code](https://claude.com/claude-code) - Claude CLI must be installed
-- [OpenRouter API Key](https://openrouter.ai/keys) - Free tier available
-
-### Install Claudish
-
-**✨ NEW in v1.3.0: Universal compatibility! Works with both Node.js and Bun.**
-
-**Option 1: Use without installing (recommended)**
+### Quick Install
 
 ```bash
-# With Node.js (works everywhere)
-npx claudish@latest --model x-ai/grok-code-fast-1 "your prompt"
+# Shell script (Linux/macOS)
+curl -fsSL https://raw.githubusercontent.com/MadAppGang/claudish/main/install.sh | bash
 
-# With Bun (faster execution)
-bunx claudish@latest --model openai/gpt-5-codex "your prompt"
-```
+# Homebrew (macOS)
+brew tap MadAppGang/claudish && brew install claudish
 
-**Option 2: Install globally**
-
-```bash
-# With npm (Node.js)
+# npm
 npm install -g claudish
 
-# With Bun (faster)
+# Bun
 bun install -g claudish
 ```
 
-**Option 3: Install from source**
+### Prerequisites
+
+- [Claude Code](https://claude.com/claude-code) - Claude CLI must be installed
+- [OpenRouter API Key](https://openrouter.ai/keys) - Free tier available
+
+### Other Install Options
+
+**Use without installing:**
 
 ```bash
-cd mcp/claudish
-bun install        # or: npm install
-bun run build      # or: npm run build
-bun link           # or: npm link
+npx claudish@latest --model x-ai/grok-code-fast-1 "your prompt"
+bunx claudish@latest --model x-ai/grok-code-fast-1 "your prompt"
 ```
 
-**Performance Note:** While Claudish works with both runtimes, Bun offers faster startup times. Both provide identical functionality.
+**Install from source:**
+
+```bash
+git clone https://github.com/MadAppGang/claudish.git
+cd claudish
+bun install && bun run build && bun link
+```
 
 ## Quick Start
 

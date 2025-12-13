@@ -27,6 +27,41 @@ export interface ToolState {
   blockIndex: number;
   started: boolean;
   closed: boolean;
+  arguments: string;  // Accumulated JSON arguments string
+}
+
+/**
+ * Validate tool call arguments against the tool schema
+ * Returns an array of missing required parameters
+ */
+export function validateToolArguments(
+  toolName: string,
+  argsStr: string,
+  toolSchemas: any[]
+): { valid: boolean; missingParams: string[]; parsedArgs: any } {
+  const schema = toolSchemas?.find((t: any) => t.name === toolName);
+  if (!schema?.input_schema) {
+    return { valid: true, missingParams: [], parsedArgs: {} };
+  }
+
+  let parsedArgs: any = {};
+  try {
+    parsedArgs = argsStr ? JSON.parse(argsStr) : {};
+  } catch (e) {
+    // If we can't parse, let Claude Code handle the error
+    return { valid: true, missingParams: [], parsedArgs: {} };
+  }
+
+  const required = schema.input_schema.required || [];
+  const missingParams = required.filter((param: string) => {
+    return parsedArgs[param] === undefined || parsedArgs[param] === null || parsedArgs[param] === "";
+  });
+
+  return {
+    valid: missingParams.length === 0,
+    missingParams,
+    parsedArgs,
+  };
 }
 
 /**
@@ -180,7 +215,8 @@ export function createStreamingResponseHandler(
   adapter: any,
   target: string,
   middlewareManager: any,
-  onTokenUpdate?: (input: number, output: number) => void
+  onTokenUpdate?: (input: number, output: number) => void,
+  toolSchemas?: any[]  // Tool schemas for validation
 ): Response {
   let isClosed = false;
   let ping: NodeJS.Timeout | null = null;
@@ -341,6 +377,7 @@ export function createStreamingResponseHandler(
                             blockIndex: state.curIdx++,
                             started: false,
                             closed: false,
+                            arguments: "",  // Initialize arguments accumulator
                           };
                           state.tools.set(idx, t);
                         }
@@ -354,6 +391,8 @@ export function createStreamingResponseHandler(
                         }
                       }
                       if (tc.function?.arguments && t) {
+                        // Accumulate arguments for validation
+                        t.arguments += tc.function.arguments;
                         send("content_block_delta", {
                           type: "content_block_delta",
                           index: t.blockIndex,
@@ -367,6 +406,29 @@ export function createStreamingResponseHandler(
                 if (chunk.choices?.[0]?.finish_reason === "tool_calls") {
                   for (const t of Array.from(state.tools.values())) {
                     if (t.started && !t.closed) {
+                      // Validate tool arguments before sending stop
+                      if (toolSchemas && toolSchemas.length > 0) {
+                        const validation = validateToolArguments(t.name, t.arguments, toolSchemas);
+                        if (!validation.valid) {
+                          // Send an error text block about the invalid tool call
+                          const errorIdx = state.curIdx++;
+                          const errorMsg = `\n\n⚠️ Tool call "${t.name}" failed validation: missing required parameters: ${validation.missingParams.join(", ")}. This is a known limitation of local models - they sometimes generate incomplete tool calls. Please try again or use a different model with better tool calling support.`;
+                          send("content_block_start", {
+                            type: "content_block_start",
+                            index: errorIdx,
+                            content_block: { type: "text", text: "" },
+                          });
+                          send("content_block_delta", {
+                            type: "content_block_delta",
+                            index: errorIdx,
+                            delta: { type: "text_delta", text: errorMsg },
+                          });
+                          send("content_block_stop", { type: "content_block_stop", index: errorIdx });
+                          // Don't send the stop for the invalid tool call - it will cause the error
+                          t.closed = true;
+                          continue;
+                        }
+                      }
                       send("content_block_stop", { type: "content_block_stop", index: t.blockIndex });
                       t.closed = true;
                     }

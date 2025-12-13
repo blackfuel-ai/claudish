@@ -1,12 +1,16 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { writeFileSync, unlinkSync } from "node:fs";
-import { tmpdir, platform } from "node:os";
+import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
 import { ENV } from "./config.js";
 import type { ClaudishConfig } from "./types.js";
 
-const isWindows = platform() === "win32";
+// Use process.platform directly to ensure runtime evaluation
+// (module-level constants can be inlined by bundlers at build time)
+function isWindows(): boolean {
+  return process.platform === "win32";
+}
 
 /**
  * Create a cross-platform Node.js script for status line
@@ -82,7 +86,7 @@ function createTempSettingsFile(modelDisplay: string, port: string): string {
 
   let statusCommand: string;
 
-  if (isWindows) {
+  if (isWindows()) {
     // Windows: Use Node.js script for cross-platform compatibility
     const scriptPath = createStatusLineScript(tokenFilePath);
     statusCommand = `node "${scriptPath}"`;
@@ -231,7 +235,7 @@ export async function runClaudeWithProxy(
   const proc = spawn("claude", claudeArgs, {
     env,
     stdio: "inherit", // Stream stdin/stdout/stderr to parent
-    shell: isWindows,
+    shell: isWindows(),
   });
 
   // Handle process termination signals (includes cleanup)
@@ -260,7 +264,7 @@ export async function runClaudeWithProxy(
 function setupSignalHandlers(proc: ChildProcess, tempSettingsPath: string, quiet: boolean): void {
   // Windows only supports SIGINT and SIGTERM reliably
   // SIGHUP doesn't exist on Windows
-  const signals: NodeJS.Signals[] = isWindows
+  const signals: NodeJS.Signals[] = isWindows()
     ? ["SIGINT", "SIGTERM"]
     : ["SIGINT", "SIGTERM", "SIGHUP"];
 

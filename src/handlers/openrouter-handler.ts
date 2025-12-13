@@ -8,6 +8,7 @@ import { MiddlewareManager, GeminiThoughtSignatureMiddleware } from "../middlewa
 import { transformOpenAIToClaude, removeUriFormat } from "../transform.js";
 import { log, logStructured, isLoggingEnabled } from "../logger.js";
 import { fetchModelContextWindow, doesModelSupportReasoning } from "../model-loader.js";
+import { validateToolArguments } from "./shared/openai-compat.js";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_HEADERS = {
@@ -320,7 +321,7 @@ export class OpenRouterHandler implements ModelHandler {
                                           if (tc.function?.name) {
                                               if (!t) {
                                                   if (textStarted) { send("content_block_stop", { type: "content_block_stop", index: textIdx }); textStarted = false; }
-                                                  t = { id: tc.id || `tool_${Date.now()}_${idx}`, name: tc.function.name, blockIndex: curIdx++, started: false, closed: false };
+                                                  t = { id: tc.id || `tool_${Date.now()}_${idx}`, name: tc.function.name, blockIndex: curIdx++, started: false, closed: false, arguments: "" };
                                                   tools.set(idx, t);
                                               }
                                               if (!t.started) {
@@ -329,13 +330,34 @@ export class OpenRouterHandler implements ModelHandler {
                                               }
                                           }
                                           if (tc.function?.arguments && t) {
+                                              t.arguments += tc.function.arguments;  // Accumulate arguments
                                               send("content_block_delta", { type: "content_block_delta", index: t.blockIndex, delta: { type: "input_json_delta", partial_json: tc.function.arguments } });
                                           }
                                       }
                                   }
                               }
                               if (chunk.choices?.[0]?.finish_reason === "tool_calls") {
-                                  for (const [_, t] of tools) if (t.started && !t.closed) { send("content_block_stop", { type: "content_block_stop", index: t.blockIndex }); t.closed = true; }
+                                  const toolSchemas = request.tools || [];
+                                  for (const [_, t] of tools) {
+                                      if (t.started && !t.closed) {
+                                          // Validate tool arguments before sending stop
+                                          if (toolSchemas.length > 0) {
+                                              const validation = validateToolArguments(t.name, t.arguments, toolSchemas);
+                                              if (!validation.valid) {
+                                                  // Send error text about the invalid tool call
+                                                  const errorIdx = curIdx++;
+                                                  const errorMsg = `\n\n⚠️ Tool call "${t.name}" failed validation: missing required parameters: ${validation.missingParams.join(", ")}. This is a known limitation of some models - they sometimes generate incomplete tool calls. Please try again or use a different model.`;
+                                                  send("content_block_start", { type: "content_block_start", index: errorIdx, content_block: { type: "text", text: "" } });
+                                                  send("content_block_delta", { type: "content_block_delta", index: errorIdx, delta: { type: "text_delta", text: errorMsg } });
+                                                  send("content_block_stop", { type: "content_block_stop", index: errorIdx });
+                                                  t.closed = true;
+                                                  continue;
+                                              }
+                                          }
+                                          send("content_block_stop", { type: "content_block_stop", index: t.blockIndex });
+                                          t.closed = true;
+                                      }
+                                  }
                               }
                           } catch (e) {}
                       }

@@ -247,7 +247,8 @@ export class LocalProviderHandler implements ModelHandler {
           adapter,
           target,
           this.middlewareManager,
-          (input, output) => this.writeTokenFile(input, output)
+          (input, output) => this.writeTokenFile(input, output),
+          claudeRequest.tools  // Pass tool schemas for validation
         );
       }
 

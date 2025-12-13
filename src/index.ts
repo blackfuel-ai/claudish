@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+console.log("===== CLAUDISH FRESH START - CODE UPDATED =====");
+
 // Load .env file before anything else
 import { config } from "dotenv";
 config(); // Loads .env from current working directory
@@ -127,6 +129,9 @@ async function runCli() {
         sonnet: cliConfig.modelSonnet,
         haiku: cliConfig.modelHaiku,
         subagent: cliConfig.modelSubagent,
+      },
+      {
+        summarizeTools: cliConfig.summarizeTools,
       }
     );
 

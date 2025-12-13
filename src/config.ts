@@ -84,6 +84,8 @@ export const ENV = {
   OLLAMA_HOST: "OLLAMA_HOST", // Alias for OLLAMA_BASE_URL
   LMSTUDIO_BASE_URL: "LMSTUDIO_BASE_URL", // LM Studio server (default: http://localhost:1234)
   VLLM_BASE_URL: "VLLM_BASE_URL", // vLLM server (default: http://localhost:8000)
+  // Local model optimizations
+  CLAUDISH_SUMMARIZE_TOOLS: "CLAUDISH_SUMMARIZE_TOOLS", // Summarize tool descriptions to reduce prompt size
 } as const;
 
 // OpenRouter API Configuration

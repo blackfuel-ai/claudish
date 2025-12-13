@@ -68,6 +68,12 @@ export async function parseArgs(args: string[]): Promise<ClaudishConfig> {
     }
   }
 
+  // Check for tool summarization env var
+  const envSummarizeTools = process.env[ENV.CLAUDISH_SUMMARIZE_TOOLS];
+  if (envSummarizeTools === "true" || envSummarizeTools === "1") {
+    config.summarizeTools = true;
+  }
+
   // Parse command line arguments
   let i = 0;
   while (i < args.length) {
@@ -195,6 +201,9 @@ export async function parseArgs(args: string[]): Promise<ClaudishConfig> {
         await printAllModels(hasJsonFlag, forceUpdate);
       }
       process.exit(0);
+    } else if (arg === "--summarize-tools") {
+      // Summarize tool descriptions to reduce prompt size for local models
+      config.summarizeTools = true;
     } else {
       // All remaining args go to claude CLI
       config.claudeArgs = args.slice(i);

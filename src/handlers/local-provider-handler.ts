@@ -23,6 +23,10 @@ import {
   estimateTokens,
 } from "./shared/openai-compat.js";
 
+export interface LocalProviderOptions {
+  summarizeTools?: boolean; // Summarize tool descriptions to reduce prompt size
+}
+
 export class LocalProviderHandler implements ModelHandler {
   private provider: LocalProvider;
   private modelName: string;
@@ -31,19 +35,26 @@ export class LocalProviderHandler implements ModelHandler {
   private port: number;
   private healthChecked = false;
   private isHealthy = false;
-  private contextWindow = 8192; // Default context window
+  private contextWindow = 32768; // Default context window (32K reasonable for modern models)
   private sessionInputTokens = 0;
   private sessionOutputTokens = 0;
+  private options: LocalProviderOptions;
 
-  constructor(provider: LocalProvider, modelName: string, port: number) {
+  constructor(provider: LocalProvider, modelName: string, port: number, options: LocalProviderOptions = {}) {
     this.provider = provider;
     this.modelName = modelName;
     this.port = port;
+    this.options = options;
     this.adapterManager = new AdapterManager(modelName);
     this.middlewareManager = new MiddlewareManager();
     this.middlewareManager.initialize().catch((err) => {
       log(`[LocalProvider:${provider.name}] Middleware init error: ${err}`);
     });
+    // Write initial token file so status line has data from the start
+    this.writeTokenFile(0, 0);
+    if (options.summarizeTools) {
+      log(`[LocalProvider:${provider.name}] Tool summarization enabled`);
+    }
   }
 
   /**
@@ -88,11 +99,23 @@ export class LocalProviderHandler implements ModelHandler {
   }
 
   /**
-   * Fetch context window size from Ollama's /api/show endpoint
+   * Fetch context window size from provider-specific endpoints
    */
   private async fetchContextWindow(): Promise<void> {
-    if (this.provider.name !== "ollama") return;
+    log(`[LocalProvider:${this.provider.name}] Fetching context window...`);
+    if (this.provider.name === "ollama") {
+      await this.fetchOllamaContextWindow();
+    } else if (this.provider.name === "lmstudio") {
+      await this.fetchLMStudioContextWindow();
+    } else {
+      log(`[LocalProvider:${this.provider.name}] No context window fetch for this provider, using default: ${this.contextWindow}`);
+    }
+  }
 
+  /**
+   * Fetch context window from Ollama's /api/show endpoint
+   */
+  private async fetchOllamaContextWindow(): Promise<void> {
     try {
       const response = await fetch(`${this.provider.baseUrl}/api/show`, {
         method: "POST",
@@ -102,22 +125,83 @@ export class LocalProviderHandler implements ModelHandler {
       });
 
       if (response.ok) {
-        const data = await response.json();
-        // Ollama returns context window in model_info or parameters
-        const ctxFromInfo = data.model_info?.["general.context_length"];
+        const data = await response.json() as any;
+        // Ollama returns context window in model_info
+        // Can be at general.context_length OR {architecture}.context_length
+        let ctxFromInfo = data.model_info?.["general.context_length"];
+
+        // If not found at general.context_length, search for {arch}.context_length
+        if (!ctxFromInfo && data.model_info) {
+          for (const key of Object.keys(data.model_info)) {
+            if (key.endsWith(".context_length")) {
+              ctxFromInfo = data.model_info[key];
+              break;
+            }
+          }
+        }
+
         const ctxFromParams = data.parameters?.match(/num_ctx\s+(\d+)/)?.[1];
         if (ctxFromInfo) {
-          this.contextWindow = parseInt(ctxFromInfo, 10);
+          this.contextWindow = parseInt(String(ctxFromInfo), 10);
         } else if (ctxFromParams) {
           this.contextWindow = parseInt(ctxFromParams, 10);
         } else {
-          // Default based on common model sizes
-          this.contextWindow = 8192;
+          // Keep class default (32K)
+          log(`[LocalProvider:${this.provider.name}] No context info found, using default: ${this.contextWindow}`);
         }
-        log(`[LocalProvider:${this.provider.name}] Context window: ${this.contextWindow}`);
+        if (ctxFromInfo || ctxFromParams) {
+          log(`[LocalProvider:${this.provider.name}] Context window: ${this.contextWindow}`);
+        }
       }
     } catch (e) {
       // Use default context window
+    }
+  }
+
+  /**
+   * Fetch context window from LM Studio's /v1/models endpoint
+   */
+  private async fetchLMStudioContextWindow(): Promise<void> {
+    try {
+      const response = await fetch(`${this.provider.baseUrl}/v1/models`, {
+        method: "GET",
+        signal: AbortSignal.timeout(3000),
+      });
+
+      if (response.ok) {
+        const data = await response.json() as any;
+        log(`[LocalProvider:lmstudio] Models response: ${JSON.stringify(data).slice(0, 500)}`);
+
+        // LM Studio returns models in data array
+        // Look for the loaded model and check for context_length
+        const models = data.data || [];
+        // Try exact match first, then path-based match (model names often include org/name)
+        const targetModel = models.find((m: any) => m.id === this.modelName) ||
+                           models.find((m: any) => m.id?.endsWith(`/${this.modelName}`)) ||
+                           models.find((m: any) => this.modelName.includes(m.id));
+
+        if (targetModel) {
+          // Check various possible locations for context length
+          const ctxLength = targetModel.context_length ||
+                           targetModel.max_context_length ||
+                           targetModel.context_window ||
+                           targetModel.max_tokens;
+          if (ctxLength && typeof ctxLength === "number") {
+            this.contextWindow = ctxLength;
+            log(`[LocalProvider:lmstudio] Context window from model: ${this.contextWindow}`);
+            return;
+          }
+        }
+
+        // LM Studio often uses 4096 or 8192 as defaults, but many models support more
+        // Use a reasonable default for modern models
+        this.contextWindow = 32768;
+        log(`[LocalProvider:lmstudio] Using default context window: ${this.contextWindow}`);
+      }
+    } catch (e: any) {
+      // Use default - LM Studio typically supports at least 4K
+      this.contextWindow = 32768;
+      log(`[LocalProvider:lmstudio] Failed to fetch model info: ${e?.message || e}. Using default: ${this.contextWindow}`);
     }
   }
 
@@ -128,18 +212,25 @@ export class LocalProviderHandler implements ModelHandler {
     try {
       this.sessionInputTokens += input;
       this.sessionOutputTokens += output;
-      const total = this.sessionInputTokens + this.sessionOutputTokens;
+      const sessionTotal = this.sessionInputTokens + this.sessionOutputTokens;
+
+      // For local models, calculate context usage based on both input AND output tokens
+      // Both consume context window space
+      const used = input + output;
       const leftPct = this.contextWindow > 0
-        ? Math.max(0, Math.min(100, Math.round(((this.contextWindow - total) / this.contextWindow) * 100)))
+        ? Math.max(0, Math.min(100, Math.round(((this.contextWindow - used) / this.contextWindow) * 100)))
         : 100;
 
       const data = {
         input_tokens: this.sessionInputTokens,
         output_tokens: this.sessionOutputTokens,
-        total_tokens: total,
+        total_tokens: sessionTotal,
         total_cost: 0, // Local models are free
         context_window: this.contextWindow,
         context_left_percent: leftPct,
+        // Also include last request info for debugging
+        last_request_input: input,
+        last_request_output: output,
         updated_at: Date.now(),
       };
 
@@ -176,12 +267,75 @@ export class LocalProviderHandler implements ModelHandler {
     // Transform request
     const { claudeRequest, droppedParams } = transformOpenAIToClaude(payload);
     const messages = convertMessagesToOpenAI(claudeRequest, target, filterIdentity);
-    const tools = convertToolsToOpenAI(claudeRequest);
+    const tools = convertToolsToOpenAI(claudeRequest, this.options.summarizeTools);
 
     // Check capability: strip tools if not supported
     const finalTools = this.provider.capabilities.supportsTools ? tools : [];
     if (tools.length > 0 && !this.provider.capabilities.supportsTools) {
       log(`[LocalProvider:${this.provider.name}] Tools stripped (not supported)`);
+    }
+    if (tools.length > 0 && this.options.summarizeTools) {
+      log(`[LocalProvider:${this.provider.name}] Tools summarized (${tools.length} tools)`);
+    }
+
+    // Add guidance to system prompt for local models
+    if (messages.length > 0 && messages[0].role === "system") {
+      let guidance = `
+
+IMPORTANT INSTRUCTIONS FOR THIS MODEL:
+
+1. OUTPUT BEHAVIOR:
+- NEVER output your internal reasoning, thinking process, or chain-of-thought as visible text.
+- Only output your final response, actions, or tool calls.
+- Do NOT ramble or speculate about what the user might want.
+
+2. CONVERSATION HANDLING:
+- Always look back at the ORIGINAL user request in the conversation history.
+- When you receive results from a Task/agent you called, SYNTHESIZE those results and continue fulfilling the user's original request.
+- Do NOT ask "What would you like help with?" if there's already a user request in the conversation.
+- Only ask for clarification if the FIRST user message in the conversation is unclear.
+- After calling tools or agents, continue with the next step - don't restart or ask what to do.
+
+3. CRITICAL - AFTER TOOL RESULTS:
+- When you see tool results (like file lists, search results, or command output), ALWAYS continue working.
+- Analyze the results and take the next action toward completing the user's request.
+- If the user asked for "evaluation and suggestions", you MUST provide analysis and recommendations after seeing the data.
+- NEVER stop after just calling one tool - continue until you've fully addressed the user's request.
+- If you called a Glob/Search and got files, READ important files next, then ANALYZE, then SUGGEST improvements.`;
+
+      // Add tool calling guidance if tools are present
+      if (finalTools.length > 0) {
+        // Check if this is a Qwen model that needs explicit tool format instructions
+        const isQwen = target.toLowerCase().includes("qwen");
+
+        if (isQwen) {
+          guidance += `
+
+4. TOOL CALLING FORMAT (CRITICAL FOR QWEN):
+You MUST use proper OpenAI-style function calling. Do NOT output tool calls as XML text.
+When you want to call a tool, use the API's tool_calls mechanism, NOT text like <function=...>.
+The tool calls must be structured JSON in the API response, not XML in your text output.
+
+If you cannot use structured tool_calls, format as JSON:
+{"name": "tool_name", "arguments": {"param1": "value1", "param2": "value2"}}
+
+5. TOOL PARAMETER REQUIREMENTS:`;
+        } else {
+          guidance += `
+
+4. TOOL CALLING REQUIREMENTS:`;
+        }
+
+        guidance += `
+- When calling tools, you MUST include ALL required parameters. Incomplete tool calls will fail.
+- For Task: always include "description" (3-5 words), "prompt" (detailed instructions), and "subagent_type"
+- For Bash: always include "command" and "description"
+- For Read/Write/Edit: always include the full "file_path"
+- For Grep/Glob: always include "pattern"
+- Ensure your tool call JSON is complete with all required fields before submitting.`;
+      }
+
+      messages[0].content += guidance;
     }
 
     // Build OpenAI-compatible payload
@@ -194,6 +348,15 @@ export class LocalProviderHandler implements ModelHandler {
       tools: finalTools.length > 0 ? finalTools : undefined,
       stream_options: this.provider.capabilities.supportsStreaming ? { include_usage: true } : undefined,
     };
+
+    // For Ollama: set context window size to ensure tools aren't truncated
+    // This is critical - Ollama defaults to 2048 and silently truncates, losing tool definitions!
+    if (this.provider.name === "ollama") {
+      // Use detected context window, or 32K minimum for tool calling (Claude Code sends large system prompts)
+      const numCtx = Math.max(this.contextWindow, 32768);
+      openAIPayload.options = { num_ctx: numCtx };
+      log(`[LocalProvider:${this.provider.name}] Setting num_ctx: ${numCtx} (detected: ${this.contextWindow})`);
+    }
 
     // Handle tool choice
     if (claudeRequest.tool_choice && finalTools.length > 0) {
@@ -221,6 +384,14 @@ export class LocalProviderHandler implements ModelHandler {
     // Make request to local provider
     const apiUrl = `${this.provider.baseUrl}${this.provider.apiPath}`;
 
+    // Debug: Log tool count and payload size
+    log(`[LocalProvider:${this.provider.name}] Tools: ${openAIPayload.tools?.length || 0}, Messages: ${messages.length}`);
+    if (openAIPayload.tools?.length > 0) {
+      log(`[LocalProvider:${this.provider.name}] First tool: ${openAIPayload.tools[0]?.function?.name || 'unknown'}`);
+    }
+
+    console.log(`[LocalProvider:${this.provider.name}] ===== ABOUT TO FETCH from ${apiUrl} =====`);
+    log(`[LocalProvider:${this.provider.name}] ===== ABOUT TO FETCH from ${apiUrl} =====`);
     try {
       const response = await fetch(apiUrl, {
         method: "POST",
@@ -230,17 +401,22 @@ export class LocalProviderHandler implements ModelHandler {
         body: JSON.stringify(openAIPayload),
       });
 
+      log(`[LocalProvider:${this.provider.name}] ===== FETCH COMPLETED, status: ${response.status} =====`);
       if (!response.ok) {
         const errorBody = await response.text();
+        log(`[LocalProvider:${this.provider.name}] ERROR: ${errorBody.slice(0, 200)}`);
         return this.handleErrorResponse(c, response.status, errorBody);
       }
 
+      log(`[LocalProvider:${this.provider.name}] Response OK, proceeding to streaming...`);
       if (droppedParams.length > 0) {
         c.header("X-Dropped-Params", droppedParams.join(", "));
       }
 
       // Handle streaming response
+      log(`[LocalProvider:${this.provider.name}] Streaming: ${openAIPayload.stream}`);
       if (openAIPayload.stream) {
+        log(`[LocalProvider:${this.provider.name}] ===== ENTERING STREAMING HANDLER =====`);
         return createStreamingResponseHandler(
           c,
           response,

@@ -45,6 +45,9 @@ export interface ClaudishConfig {
   costTracking?: boolean;
   auditCosts?: boolean;
   resetCosts?: boolean;
+
+  // Local model optimizations
+  summarizeTools?: boolean; // Summarize tool descriptions to reduce prompt size for local models
 }
 
 // Anthropic API Types

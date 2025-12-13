@@ -5,9 +5,13 @@ import { log, isLoggingEnabled } from "./logger.js";
 import type { ProxyServer } from "./types.js";
 import { NativeHandler } from "./handlers/native-handler.js";
 import { OpenRouterHandler } from "./handlers/openrouter-handler.js";
-import { LocalProviderHandler } from "./handlers/local-provider-handler.js";
+import { LocalProviderHandler, type LocalProviderOptions } from "./handlers/local-provider-handler.js";
 import type { ModelHandler } from "./handlers/types.js";
 import { resolveProvider, parseUrlModel, createUrlProvider } from "./providers/provider-registry.js";
+
+export interface ProxyServerOptions {
+  summarizeTools?: boolean; // Summarize tool descriptions for local models
+}
 
 export async function createProxyServer(
   port: number,
@@ -15,7 +19,8 @@ export async function createProxyServer(
   model?: string,
   monitorMode: boolean = false,
   anthropicApiKey?: string,
-  modelMap?: { opus?: string; sonnet?: string; haiku?: string; subagent?: string }
+  modelMap?: { opus?: string; sonnet?: string; haiku?: string; subagent?: string },
+  options: ProxyServerOptions = {}
 ): Promise<ProxyServer> {
 
   // Define handlers for different roles
@@ -31,6 +36,11 @@ export async function createProxyServer(
       return openRouterHandlers.get(targetModel)!;
   };
 
+  // Local provider options
+  const localProviderOptions: LocalProviderOptions = {
+    summarizeTools: options.summarizeTools,
+  };
+
   // Helper to get or create Local Provider handler for a target model
   const getLocalProviderHandler = (targetModel: string): ModelHandler | null => {
       if (localProviderHandlers.has(targetModel)) {
@@ -40,7 +50,7 @@ export async function createProxyServer(
       // Check for prefix-based local provider (ollama/, lmstudio/, etc.)
       const resolved = resolveProvider(targetModel);
       if (resolved) {
-          const handler = new LocalProviderHandler(resolved.provider, resolved.modelName, port);
+          const handler = new LocalProviderHandler(resolved.provider, resolved.modelName, port, localProviderOptions);
           localProviderHandlers.set(targetModel, handler);
           log(`[Proxy] Created local provider handler: ${resolved.provider.name}/${resolved.modelName}`);
           return handler;
@@ -50,7 +60,7 @@ export async function createProxyServer(
       const urlParsed = parseUrlModel(targetModel);
       if (urlParsed) {
           const provider = createUrlProvider(urlParsed);
-          const handler = new LocalProviderHandler(provider, urlParsed.modelName, port);
+          const handler = new LocalProviderHandler(provider, urlParsed.modelName, port, localProviderOptions);
           localProviderHandlers.set(targetModel, handler);
           log(`[Proxy] Created URL-based local provider handler: ${urlParsed.baseUrl}/${urlParsed.modelName}`);
           return handler;

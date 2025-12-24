@@ -7,7 +7,7 @@ import { NativeHandler } from "./handlers/native-handler.js";
 import { OpenRouterHandler } from "./handlers/openrouter-handler.js";
 import { LocalProviderHandler, type LocalProviderOptions } from "./handlers/local-provider-handler.js";
 import type { ModelHandler } from "./handlers/types.js";
-import { resolveProvider, parseUrlModel, createUrlProvider } from "./providers/provider-registry.js";
+import { resolveProvider, parseUrlModel, createUrlProvider, createCustomBaseUrlProvider } from "./providers/provider-registry.js";
 
 export interface ProxyServerOptions {
   summarizeTools?: boolean; // Summarize tool descriptions for local models
@@ -63,6 +63,15 @@ export async function createProxyServer(
           const handler = new LocalProviderHandler(provider, urlParsed.modelName, port, localProviderOptions);
           localProviderHandlers.set(targetModel, handler);
           log(`[Proxy] Created URL-based local provider handler: ${urlParsed.baseUrl}/${urlParsed.modelName}`);
+          return handler;
+      }
+
+      // Check for CLAUDISH_BASE_URL (custom OpenAI-compatible endpoint)
+      const customBaseUrl = createCustomBaseUrlProvider(targetModel);
+      if (customBaseUrl) {
+          const handler = new LocalProviderHandler(customBaseUrl.provider, customBaseUrl.modelName, port, localProviderOptions);
+          localProviderHandlers.set(targetModel, handler);
+          log(`[Proxy] Created custom base URL handler: ${customBaseUrl.provider.baseUrl}/${customBaseUrl.modelName}`);
           return handler;
       }
 

@@ -84,6 +84,15 @@ export const ENV = {
   OLLAMA_HOST: "OLLAMA_HOST", // Alias for OLLAMA_BASE_URL
   LMSTUDIO_BASE_URL: "LMSTUDIO_BASE_URL", // LM Studio server (default: http://localhost:1234)
   VLLM_BASE_URL: "VLLM_BASE_URL", // vLLM server (default: http://localhost:8000)
+  MLX_BASE_URL: "MLX_BASE_URL", // MLX server (default: http://127.0.0.1:8080)
+  // Custom OpenAI-compatible endpoint
+  CLAUDISH_BASE_URL: "CLAUDISH_BASE_URL", // Base URL for custom OpenAI-compatible endpoint (e.g., https://api.example.com/v1)
+  // Local provider API keys (for authenticated endpoints)
+  CLAUDISH_LOCAL_API_KEY: "CLAUDISH_LOCAL_API_KEY", // General API key for all local providers (fallback)
+  OLLAMA_API_KEY: "OLLAMA_API_KEY", // Ollama-specific API key
+  LMSTUDIO_API_KEY: "LMSTUDIO_API_KEY", // LM Studio-specific API key
+  VLLM_API_KEY: "VLLM_API_KEY", // vLLM-specific API key
+  MLX_API_KEY: "MLX_API_KEY", // MLX-specific API key
   // Local model optimizations
   CLAUDISH_SUMMARIZE_TOOLS: "CLAUDISH_SUMMARIZE_TOOLS", // Summarize tool descriptions to reduce prompt size
 } as const;

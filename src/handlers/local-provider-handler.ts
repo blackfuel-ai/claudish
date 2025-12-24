@@ -528,11 +528,18 @@ If you cannot use structured tool_calls, format as JSON:
         controller.abort();
       }, 600000); // 10 minutes - local models can be slow
 
+      // Build headers with optional Authorization
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      const apiKey = this.getApiKey();
+      if (apiKey) {
+        headers["Authorization"] = `Bearer ${apiKey}`;
+      }
+
       const response = await fetch(apiUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify(openAIPayload),
         signal: controller.signal,
         // @ts-ignore - Use custom undici agent with long timeouts for local LLM inference
@@ -641,6 +648,30 @@ If you cannot use structured tool_calls, format as JSON:
       default:
         return "Make sure the model is available on the server.";
     }
+  }
+
+  /**
+   * Get API key for this provider
+   * Priority: Provider-specific env var > CLAUDISH_LOCAL_API_KEY fallback
+   */
+  private getApiKey(): string | undefined {
+    // Check provider-specific env var first (e.g., OLLAMA_API_KEY)
+    if (this.provider.apiKeyEnvVar) {
+      const providerKey = process.env[this.provider.apiKeyEnvVar];
+      if (providerKey) {
+        log(`[LocalProvider:${this.provider.name}] Using API key from ${this.provider.apiKeyEnvVar}`);
+        return providerKey;
+      }
+    }
+
+    // Fallback to general CLAUDISH_LOCAL_API_KEY
+    const fallbackKey = process.env.CLAUDISH_LOCAL_API_KEY;
+    if (fallbackKey) {
+      log(`[LocalProvider:${this.provider.name}] Using API key from CLAUDISH_LOCAL_API_KEY`);
+      return fallbackKey;
+    }
+
+    return undefined;
   }
 
   async shutdown(): Promise<void> {}

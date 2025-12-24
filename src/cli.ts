@@ -1,6 +1,7 @@
 import { ENV } from "./config.js";
 import type { ClaudishConfig } from "./types.js";
 import { loadModelInfo, getAvailableModels } from "./model-loader.js";
+import { isLocalProvider, hasCustomBaseUrl } from "./providers/provider-registry.js";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -238,9 +239,14 @@ export async function parseArgs(args: string[]): Promise<ClaudishConfig> {
       console.log("[claudish] Ensure you are logged in to Claude Code (claude auth login)");
     }
   } else {
-    // OpenRouter mode: requires OpenRouter API key
+    // Check if using a local provider (Ollama, LM Studio, vLLM, custom URL)
+    // Note: hasCustomBaseUrl() is checked separately because CLAUDISH_BASE_URL
+    // should bypass OpenRouter even when --model is not specified (profile models apply later)
+    const usingLocalProvider = (config.model && isLocalProvider(config.model)) || hasCustomBaseUrl();
+
+    // OpenRouter mode: requires OpenRouter API key (unless using local provider)
     const apiKey = process.env[ENV.OPENROUTER_API_KEY];
-    if (!apiKey) {
+    if (!apiKey && !usingLocalProvider) {
       // In interactive mode, we'll prompt for it later
       // In non-interactive mode, it's required now
       if (!config.interactive) {
@@ -989,6 +995,18 @@ ENVIRONMENT VARIABLES:
   OLLAMA_HOST                     Alias for OLLAMA_BASE_URL (same default)
   LMSTUDIO_BASE_URL               LM Studio server (default: http://localhost:1234)
   VLLM_BASE_URL                   vLLM server (default: http://localhost:8000)
+  MLX_BASE_URL                    MLX server (default: http://127.0.0.1:8080)
+
+  Custom OpenAI-compatible endpoint:
+  CLAUDISH_BASE_URL               Custom API base URL (e.g., https://api.example.com/v1)
+                                  Use with --model to specify just the model name
+
+  Local provider API keys (for authenticated endpoints):
+  CLAUDISH_LOCAL_API_KEY          General API key for all local providers (fallback)
+  OLLAMA_API_KEY                  Ollama-specific API key (overrides CLAUDISH_LOCAL_API_KEY)
+  LMSTUDIO_API_KEY                LM Studio-specific API key
+  VLLM_API_KEY                    vLLM-specific API key
+  MLX_API_KEY                     MLX-specific API key
 
 EXAMPLES:
   # Interactive mode (default) - shows model selector

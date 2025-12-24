@@ -17,6 +17,7 @@ export interface LocalProvider {
   baseUrl: string;
   apiPath: string;
   envVar: string;
+  apiKeyEnvVar: string; // Environment variable for API key (e.g., OLLAMA_API_KEY)
   prefixes: string[];
   capabilities: ProviderCapabilities;
 }
@@ -38,6 +39,7 @@ const getProviders = (): LocalProvider[] => [
     baseUrl: process.env.OLLAMA_HOST || process.env.OLLAMA_BASE_URL || "http://localhost:11434",
     apiPath: "/v1/chat/completions",
     envVar: "OLLAMA_BASE_URL",
+    apiKeyEnvVar: "OLLAMA_API_KEY",
     prefixes: ["ollama/", "ollama:"],
     capabilities: {
       supportsTools: true,
@@ -51,6 +53,7 @@ const getProviders = (): LocalProvider[] => [
     baseUrl: process.env.LMSTUDIO_BASE_URL || "http://localhost:1234",
     apiPath: "/v1/chat/completions",
     envVar: "LMSTUDIO_BASE_URL",
+    apiKeyEnvVar: "LMSTUDIO_API_KEY",
     prefixes: ["lmstudio/", "lmstudio:", "mlstudio/", "mlstudio:"],  // mlstudio alias for common typo
     capabilities: {
       supportsTools: true,
@@ -64,6 +67,7 @@ const getProviders = (): LocalProvider[] => [
     baseUrl: process.env.VLLM_BASE_URL || "http://localhost:8000",
     apiPath: "/v1/chat/completions",
     envVar: "VLLM_BASE_URL",
+    apiKeyEnvVar: "VLLM_API_KEY",
     prefixes: ["vllm/", "vllm:"],
     capabilities: {
       supportsTools: true,
@@ -77,6 +81,7 @@ const getProviders = (): LocalProvider[] => [
     baseUrl: process.env.MLX_BASE_URL || "http://127.0.0.1:8080",
     apiPath: "/v1/chat/completions",
     envVar: "MLX_BASE_URL",
+    apiKeyEnvVar: "MLX_API_KEY",
     prefixes: ["mlx/", "mlx:"],
     capabilities: {
       // MLX server's tool parsing is fragile with Qwen models
@@ -117,6 +122,20 @@ export function resolveProvider(modelId: string): ResolvedProvider | null {
 }
 
 /**
+ * Check if CLAUDISH_BASE_URL is set (for custom OpenAI-compatible endpoints)
+ */
+export function hasCustomBaseUrl(): boolean {
+  return !!process.env.CLAUDISH_BASE_URL;
+}
+
+/**
+ * Get the custom base URL if set
+ */
+export function getCustomBaseUrl(): string | undefined {
+  return process.env.CLAUDISH_BASE_URL;
+}
+
+/**
  * Check if a model ID matches any local provider pattern
  */
 export function isLocalProvider(modelId: string): boolean {
@@ -127,6 +146,11 @@ export function isLocalProvider(modelId: string): boolean {
 
   // Check URL patterns
   if (parseUrlModel(modelId) !== null) {
+    return true;
+  }
+
+  // Check if CLAUDISH_BASE_URL is set - any model can be used with custom base URL
+  if (hasCustomBaseUrl()) {
     return true;
   }
 
@@ -183,6 +207,7 @@ export function createUrlProvider(parsed: UrlParsedModel): LocalProvider {
     baseUrl: parsed.baseUrl,
     apiPath: "/v1/chat/completions",
     envVar: "",
+    apiKeyEnvVar: "", // Custom URLs use CLAUDISH_LOCAL_API_KEY fallback
     prefixes: [],
     capabilities: {
       supportsTools: true,
@@ -190,5 +215,40 @@ export function createUrlProvider(parsed: UrlParsedModel): LocalProvider {
       supportsStreaming: true,
       supportsJsonMode: true,
     },
+  };
+}
+
+/**
+ * Create a provider config using CLAUDISH_BASE_URL
+ * Used when model ID doesn't match any known provider but CLAUDISH_BASE_URL is set
+ */
+export function createCustomBaseUrlProvider(modelName: string): ResolvedProvider | null {
+  const baseUrl = process.env.CLAUDISH_BASE_URL;
+  if (!baseUrl) {
+    return null;
+  }
+
+  // Normalize base URL - remove trailing slash and /chat/completions if present
+  let normalizedUrl = baseUrl.replace(/\/+$/, "");
+  if (normalizedUrl.endsWith("/chat/completions")) {
+    normalizedUrl = normalizedUrl.replace(/\/chat\/completions$/, "");
+  }
+
+  return {
+    provider: {
+      name: "custom-base-url",
+      baseUrl: normalizedUrl,
+      apiPath: "/chat/completions",
+      envVar: "CLAUDISH_BASE_URL",
+      apiKeyEnvVar: "", // Uses CLAUDISH_LOCAL_API_KEY fallback
+      prefixes: [],
+      capabilities: {
+        supportsTools: true,
+        supportsVision: false,
+        supportsStreaming: true,
+        supportsJsonMode: true,
+      },
+    },
+    modelName,
   };
 }

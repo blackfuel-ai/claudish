@@ -1,0 +1,154 @@
+name: Claude SRE Investigation
+
+on:
+  workflow_dispatch:
+    inputs:
+      alert_name:
+        description: 'Alert name from Grafana'
+        required: true
+        type: string
+      alert_description:
+        description: 'Alert description/summary'
+        required: false
+        type: string
+      alert_labels:
+        description: 'Alert labels (JSON format)'
+        required: false
+        type: string
+      slack_thread_url:
+        description: 'Slack thread URL for context'
+        required: false
+        type: string
+  repository_dispatch:
+    types: [grafana-alert]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  investigate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set alert context
+        id: context
+        run: |
+          # Handle both workflow_dispatch and repository_dispatch
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "alert_name=${{ github.event.client_payload.alert_name }}" >> $GITHUB_OUTPUT
+            echo "alert_description=${{ github.event.client_payload.alert_description }}" >> $GITHUB_OUTPUT
+            echo "alert_labels=${{ github.event.client_payload.alert_labels }}" >> $GITHUB_OUTPUT
+            echo "slack_thread_url=${{ github.event.client_payload.slack_thread_url }}" >> $GITHUB_OUTPUT
+          else
+            echo "alert_name=${{ inputs.alert_name }}" >> $GITHUB_OUTPUT
+            echo "alert_description=${{ inputs.alert_description }}" >> $GITHUB_OUTPUT
+            echo "alert_labels=${{ inputs.alert_labels }}" >> $GITHUB_OUTPUT
+            echo "slack_thread_url=${{ inputs.slack_thread_url }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create investigation prompt
+        run: |
+          cat > /tmp/sre-investigation-prompt.md << 'EOF'
+          # SRE Alert Investigation
+
+          ## Alert Details
+          - **Alert Name:** ${{ steps.context.outputs.alert_name }}
+          - **Description:** ${{ steps.context.outputs.alert_description }}
+          - **Labels:** ${{ steps.context.outputs.alert_labels }}
+
+          ## Investigation Instructions
+
+          You are an SRE investigator. Analyze this alert and provide a comprehensive investigation report.
+
+          ### Steps to Follow:
+          1. **Identify the Alert Type** - Determine if this is a connection error, timeout, resource issue, etc.
+          2. **Check Relevant Playbooks** - Look in `sre-docs/playbooks/` for applicable runbooks
+          3. **Analyze Patterns** - Look for patterns in the alert (timing, affected services, scope)
+          4. **Determine Root Cause** - Based on available information, identify likely root cause
+          5. **Recommend Actions** - Provide actionable recommendations
+
+          ### Output Format:
+
+          Provide your report in this format:
+
+          :mag: **Investigation Complete**
+
+          **:book: Playbook:** [Which playbook was followed, if any]
+
+          **:mag_right: Root Cause:**
+          [Brief explanation of the root cause]
+
+          **:dart: Identifiers:**
+          - **Who:** [Affected clients/users]
+          - **What:** [Affected service/endpoint]
+          - **Where:** [Infrastructure location]
+
+          **:bar_chart: Key Findings:**
+          - [Finding 1]
+          - [Finding 2]
+          - [Finding 3]
+
+          **:stopwatch: Timeline:**
+          - [Event 1]
+          - [Event 2]
+
+          **:zap: Actions Taken:**
+          - [Action 1]
+          - [Action 2]
+
+          **:white_check_mark: Status:** [Current status and next steps]
+
+          **:bulb: Recommendation:**
+          [Actionable recommendation]
+
+          **:link: Resources:**
+          - [Relevant playbook link]
+          - [Alert source link]
+          EOF
+
+      - name: Run SRE Investigation with Claudish
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          ANTHROPIC_API_KEY: sk-ant-api03-placeholder
+        run: |
+          npx claudish@latest \
+            --model minimax/minimax-m2 \
+            --stdin < /tmp/sre-investigation-prompt.md \
+            > /tmp/investigation-result.md 2>&1 || true
+
+          echo "## Investigation Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          cat /tmp/investigation-result.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload investigation report
+        uses: actions/upload-artifact@v4
+        with:
+          name: sre-investigation-report
+          path: /tmp/investigation-result.md
+          retention-days: 30
+
+      - name: Post to Slack (if thread URL provided)
+        if: steps.context.outputs.slack_thread_url != ''
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          if [ -n "$SLACK_BOT_TOKEN" ]; then
+            # Extract channel and thread_ts from Slack URL
+            # URL format: https://workspace.slack.com/archives/CHANNEL_ID/p1234567890123456?thread_ts=...
+            THREAD_URL="${{ steps.context.outputs.slack_thread_url }}"
+            echo "Would post investigation results to Slack thread: $THREAD_URL"
+            # Actual Slack posting would require slack-github-action or curl to Slack API
+          else
+            echo "SLACK_BOT_TOKEN not configured, skipping Slack notification"
+          fi

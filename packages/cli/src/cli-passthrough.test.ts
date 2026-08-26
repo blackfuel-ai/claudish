@@ -1,8 +1,8 @@
 /**
  * E2E tests for the flag passthrough feature.
  *
- * Validates the complete flow: parseArgs → arg-building logic (as in runClaudeWithProxy)
- * → final Claude Code args array, without requiring API keys or a running proxy server.
+ * Validates the complete flow: parseArgs → buildClaudeArgs → final Claude Code
+ * args array, without requiring API keys or a running proxy server.
  *
  * Also validates settings merge behavior (mergeUserSettingsIfPresent logic) using
  * temp files.
@@ -12,51 +12,21 @@ import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { writeFileSync, readFileSync, unlinkSync, mkdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { buildClaudeArgs } from "./claude-runner.js";
 import { parseArgs } from "./cli.js";
 import type { ClaudishConfig } from "./types.js";
 
 // ---------------------------------------------------------------------------
-// Helper: buildClaudeArgs
+// Helper: buildArgs
 //
-// Replicates the arg-building section of runClaudeWithProxy (lines 252-284
-// of claude-runner.ts) without creating real files or spawning processes.
-// The tempSettingsPath is mocked to a fixed sentinel so tests can match it
-// without knowing actual filesystem paths.
+// Calls the real arg builder from claude-runner.ts with a fixed settings path
+// sentinel, so tests can match it without knowing actual filesystem paths.
 // ---------------------------------------------------------------------------
 
 const MOCK_SETTINGS_PATH = "/mock/.claudish/settings-12345.json";
 
-function buildClaudeArgs(config: ClaudishConfig): string[] {
-  const claudeArgs: string[] = [];
-
-  // Always starts with --settings <path>
-  claudeArgs.push("--settings", MOCK_SETTINGS_PATH);
-
-  if (config.interactive) {
-    // Interactive mode
-    if (config.autoApprove) {
-      claudeArgs.push("--dangerously-skip-permissions");
-    }
-    if (config.dangerous) {
-      claudeArgs.push("--dangerouslyDisableSandbox");
-    }
-    claudeArgs.push(...config.claudeArgs);
-  } else {
-    // Single-shot mode
-    claudeArgs.push("-p");
-    if (config.autoApprove) {
-      claudeArgs.push("--dangerously-skip-permissions");
-    }
-    if (config.dangerous) {
-      claudeArgs.push("--dangerouslyDisableSandbox");
-    }
-    if (config.jsonOutput) {
-      claudeArgs.push("--output-format", "json");
-    }
-    claudeArgs.push(...config.claudeArgs);
-  }
-
-  return claudeArgs;
+function buildArgs(config: ClaudishConfig): string[] {
+  return buildClaudeArgs(config, MOCK_SETTINGS_PATH);
 }
 
 // ---------------------------------------------------------------------------
@@ -108,7 +78,7 @@ function mergeUserSettingsLogic(
 describe("Group 1: E2E — Single-shot mode full pipeline", () => {
   test("claudish --model grok 'hello' → --settings <path> -p hello", async () => {
     const config = await parseArgs(["--model", "grok", "hello"]);
-    const args = buildClaudeArgs(config);
+    const args = buildArgs(config);
 
     expect(args[0]).toBe("--settings");
     expect(args[1]).toBe(MOCK_SETTINGS_PATH);
@@ -132,7 +102,7 @@ describe("Group 1: E2E — Single-shot mode full pipeline", () => {
     expect(config.stdin).toBe(true);
     expect(config.quiet).toBe(true);
 
-    const args = buildClaudeArgs(config);
+    const args = buildArgs(config);
     expect(args[0]).toBe("--settings");
     expect(args[2]).toBe("-p");
     expect(args).toContain("--agent");
@@ -153,7 +123,7 @@ describe("Group 1: E2E — Single-shot mode full pipeline", () => {
       "plan",
       "task",
     ]);
-    const args = buildClaudeArgs(config);
+    const args = buildArgs(config);
 
     expect(args).toContain("--effort");
     expect(args).toContain("high");
@@ -165,7 +135,7 @@ describe("Group 1: E2E — Single-shot mode full pipeline", () => {
 
   test("claudish --model grok -y --agent test 'do it' → --dangerously-skip-permissions inserted", async () => {
     const config = await parseArgs(["--model", "grok", "-y", "--agent", "test", "do it"]);
-    const args = buildClaudeArgs(config);
+    const args = buildArgs(config);
 
     expect(args[2]).toBe("-p");
     expect(args[3]).toBe("--dangerously-skip-permissions");
@@ -183,7 +153,7 @@ describe("Group 1: E2E — Single-shot mode full pipeline", () => {
       "-verbose",
       "task",
     ]);
-    const args = buildClaudeArgs(config);
+    const args = buildArgs(config);
 
     expect(args[2]).toBe("-p");
     expect(args).toContain("--system-prompt");
@@ -195,7 +165,7 @@ describe("Group 1: E2E — Single-shot mode full pipeline", () => {
     const config = await parseArgs(["--model", "grok", "--json", "--add-dir", "/tmp", "task"]);
     expect(config.jsonOutput).toBe(true);
 
-    const args = buildClaudeArgs(config);
+    const args = buildArgs(config);
     expect(args[2]).toBe("-p");
     expect(args).toContain("--output-format");
     expect(args).toContain("json");
@@ -214,7 +184,7 @@ describe("Group 2: E2E — Interactive mode full pipeline", () => {
     const config = await parseArgs(["--model", "grok", "-i", "--permission-mode", "plan"]);
     expect(config.interactive).toBe(true);
 
-    const args = buildClaudeArgs(config);
+    const args = buildArgs(config);
     expect(args[0]).toBe("--settings");
     expect(args[1]).toBe(MOCK_SETTINGS_PATH);
     // -p must NOT appear in interactive mode
@@ -228,7 +198,7 @@ describe("Group 2: E2E — Interactive mode full pipeline", () => {
     expect(config.interactive).toBe(true);
     expect(config.autoApprove).toBe(true);
 
-    const args = buildClaudeArgs(config);
+    const args = buildArgs(config);
     expect(args).not.toContain("-p");
     expect(args).toContain("--dangerously-skip-permissions");
     expect(args).toContain("--effort");
@@ -243,7 +213,7 @@ describe("Group 2: E2E — Interactive mode full pipeline", () => {
     const config = await parseArgs(["--model", "grok", "-i", "--agent", "researcher"]);
     expect(config.interactive).toBe(true);
 
-    const args = buildClaudeArgs(config);
+    const args = buildArgs(config);
     expect(args).not.toContain("-p");
     expect(args).toContain("--agent");
     expect(args).toContain("researcher");
@@ -254,7 +224,7 @@ describe("Group 2: E2E — Interactive mode full pipeline", () => {
     expect(config.interactive).toBe(true);
     expect(config.claudeArgs).toEqual([]);
 
-    const args = buildClaudeArgs(config);
+    const args = buildArgs(config);
     expect(args).toEqual(["--settings", MOCK_SETTINGS_PATH, "--dangerously-skip-permissions"]);
   });
 });
@@ -389,7 +359,7 @@ describe("Group 3: E2E — Settings merge", () => {
 describe("Group 4: E2E — Backward compatibility regression", () => {
   test("claudish --model grok 'prompt' → same single-shot output as before", async () => {
     const config = await parseArgs(["--model", "grok", "prompt"]);
-    const args = buildClaudeArgs(config);
+    const args = buildArgs(config);
 
     // Exact shape: --settings <path> -p --dangerously-skip-permissions prompt
     expect(args).toEqual([
@@ -457,7 +427,7 @@ describe("Group 5: E2E — Edge cases", () => {
     expect(config.interactive).toBe(true);
     expect(config.claudeArgs).toEqual([]);
 
-    const args = buildClaudeArgs(config);
+    const args = buildArgs(config);
     // Interactive mode: --settings <path> + --dangerously-skip-permissions (default)
     expect(args).toEqual(["--settings", MOCK_SETTINGS_PATH, "--dangerously-skip-permissions"]);
     expect(args).not.toContain("-p");
@@ -487,7 +457,7 @@ describe("Group 5: E2E — Edge cases", () => {
     const config = await parseArgs(["--model", "grok", "--json", "task"]);
     expect(config.jsonOutput).toBe(true);
 
-    const args = buildClaudeArgs(config);
+    const args = buildArgs(config);
     const fmtIdx = args.indexOf("--output-format");
     expect(fmtIdx).toBeGreaterThan(-1);
     expect(args[fmtIdx + 1]).toBe("json");

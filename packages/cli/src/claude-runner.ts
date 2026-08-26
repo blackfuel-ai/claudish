@@ -256,32 +256,45 @@ function mergeUserSettingsIfPresent(
 }
 
 /**
- * Run Claude Code CLI with the proxy server
+ * Kernel ceiling on a single argv entry — `MAX_ARG_STRLEN`, 128 KiB including
+ * the NUL terminator on Linux. A larger argument aborts the spawn with `E2BIG`
+ * before the child process starts.
  */
-export async function runClaudeWithProxy(
-  config: ClaudishConfig,
-  proxyUrl: string,
-  onCleanup?: () => void
-): Promise<number> {
-  // Use actual OpenRouter model ID (no translation)
-  // This ensures ANY model works, not just our shortlist
-  // In profile/multi-model mode, don't set a single model - let Claude Code use its defaults
-  // so the proxy can match tier names (opus/sonnet/haiku) and apply profile mappings
-  const hasProfileMappings =
-    config.modelOpus || config.modelSonnet || config.modelHaiku || config.modelSubagent;
-  const modelId = config.model || (hasProfileMappings || config.monitor ? undefined : "unknown");
+export const MAX_ARG_BYTES = 128 * 1024 - 1;
 
-  // Extract port from proxy URL for token file path
-  const portMatch = proxyUrl.match(/:(\d+)/);
-  const port = portMatch ? portMatch[1] : "unknown";
+/** A command line Claude Code cannot be spawned with. */
+export class ArgvTooLargeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ArgvTooLargeError";
+  }
+}
 
-  // Create temporary settings file with custom status line for this instance
-  const { path: tempSettingsPath, statusLine } = createTempSettingsFile(modelId, port);
+/**
+ * Throw when any argument exceeds the per-argument ceiling.
+ *
+ * Names the failure that the spawn would otherwise surface as a bare `E2BIG`,
+ * and points at the input that carries an unbounded payload.
+ */
+export function assertArgvWithinLimit(args: string[]): void {
+  args.forEach((arg, index) => {
+    const bytes = Buffer.byteLength(arg, "utf-8");
+    if (bytes > MAX_ARG_BYTES) {
+      throw new ArgvTooLargeError(
+        `Claude Code argument ${index} is ${bytes} bytes, above the ${MAX_ARG_BYTES}-byte per-argument limit. Single-shot mode delivers a --stdin prompt on Claude Code's stdin, which has no such limit; interactive mode keeps stdin for the terminal, so its prompt has to fit in one argument.`
+      );
+    }
+  });
+}
 
-  // Merge user's --settings into our temp settings file if user provided one
-  mergeUserSettingsIfPresent(config, tempSettingsPath, statusLine);
-
-  // Build claude arguments
+/**
+ * Build the Claude Code command line for a run.
+ *
+ * A prompt read from stdin is absent here by construction: it reaches the
+ * child on its stdin (see `runClaudeWithProxy`), so its size is bounded by the
+ * pipe rather than by `MAX_ARG_BYTES`.
+ */
+export function buildClaudeArgs(config: ClaudishConfig, tempSettingsPath: string): string[] {
   const claudeArgs: string[] = [];
 
   // Add settings file flag (our merged temp file, applies to this instance only)
@@ -312,9 +325,42 @@ export async function runClaudeWithProxy(
     if (config.jsonOutput) {
       claudeArgs.push("--output-format", "json");
     }
-    // Add user-provided args as-is (including prompt and any Claude Code flags)
+    // Add user-provided args as-is (including any Claude Code flags)
     claudeArgs.push(...config.claudeArgs);
   }
+
+  return claudeArgs;
+}
+
+/**
+ * Run Claude Code CLI with the proxy server
+ */
+export async function runClaudeWithProxy(
+  config: ClaudishConfig,
+  proxyUrl: string,
+  onCleanup?: () => void
+): Promise<number> {
+  // Use actual OpenRouter model ID (no translation)
+  // This ensures ANY model works, not just our shortlist
+  // In profile/multi-model mode, don't set a single model - let Claude Code use its defaults
+  // so the proxy can match tier names (opus/sonnet/haiku) and apply profile mappings
+  const hasProfileMappings =
+    config.modelOpus || config.modelSonnet || config.modelHaiku || config.modelSubagent;
+  const modelId = config.model || (hasProfileMappings || config.monitor ? undefined : "unknown");
+
+  // Extract port from proxy URL for token file path
+  const portMatch = proxyUrl.match(/:(\d+)/);
+  const port = portMatch ? portMatch[1] : "unknown";
+
+  // Create temporary settings file with custom status line for this instance
+  const { path: tempSettingsPath, statusLine } = createTempSettingsFile(modelId, port);
+
+  // Merge user's --settings into our temp settings file if user provided one
+  mergeUserSettingsIfPresent(config, tempSettingsPath, statusLine);
+
+  // Build claude arguments
+  const claudeArgs = buildClaudeArgs(config, tempSettingsPath);
+  assertArgvWithinLimit(claudeArgs);
 
   // Check if this is a local model (ollama/, lmstudio/, vllm/, mlx/, or http:// URL)
   const isLocalModel = modelId
@@ -428,11 +474,18 @@ export async function runClaudeWithProxy(
   // prompt readline that would otherwise race the child for stdin (#85/88/99).
   setClaudeCodeRunning(true);
 
+  // A prompt read from stdin is written to the child's stdin: Claude Code reads
+  // its prompt there in print mode, and a pipe carries any size. stdout and
+  // stderr stay inherited, so streamed output is untouched.
   const proc = spawn(spawnCommand, claudeArgs, {
     env,
-    stdio: "inherit",
+    stdio: config.stdinPrompt ? ["pipe", "inherit", "inherit"] : "inherit",
     shell: needsShell,
   });
+
+  if (config.stdinPrompt) {
+    proc.stdin?.end(config.stdinPrompt);
+  }
 
   // Handle process termination signals (includes cleanup)
   setupSignalHandlers(proc, tempSettingsPath, config.quiet, onCleanup);

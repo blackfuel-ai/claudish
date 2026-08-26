@@ -36,6 +36,13 @@ export interface ClaudishConfig {
   /** Resolved default provider (computed via resolveDefaultProvider() after argv parsing) */
   resolvedDefaultProvider?: import("./default-provider.js").ResolvedDefaultProvider;
   claudeArgs: string[];
+  /**
+   * Prompt read from stdin (`--stdin`), delivered to Claude Code on its own
+   * stdin in single-shot mode so a prompt larger than the kernel per-argument
+   * ceiling still reaches the model. Unset in interactive mode, where stdin
+   * belongs to the terminal and the prompt travels as a positional argument.
+   */
+  stdinPrompt?: string;
   _hasPositionalPrompt?: boolean; // Internal: true when a positional prompt arg was found (not a flag value)
 
   // Model Mapping

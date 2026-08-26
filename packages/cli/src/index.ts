@@ -442,8 +442,15 @@ async function runCli() {
     if (cliConfig.stdin) {
       const stdinInput = await readStdin();
       if (stdinInput.trim()) {
-        // Prepend stdin content to claudeArgs
-        cliConfig.claudeArgs = [stdinInput, ...cliConfig.claudeArgs];
+        if (cliConfig.interactive) {
+          // Interactive mode gives stdin to the terminal, so the prompt travels
+          // as Claude Code's positional argument.
+          cliConfig.claudeArgs = [stdinInput, ...cliConfig.claudeArgs];
+        } else {
+          // Single-shot mode pipes the prompt to Claude Code's stdin, which has
+          // no per-argument size ceiling.
+          cliConfig.stdinPrompt = stdinInput;
+        }
       }
     }
 

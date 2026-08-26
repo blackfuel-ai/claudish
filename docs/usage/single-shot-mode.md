@@ -94,6 +94,12 @@ git diff HEAD~1 | claudish --stdin --model openai/gpt-5.1-codex "Review these ch
 cat src/complex-module.ts | claudish --stdin --model google/gemini-3-pro-preview "Explain this code"
 ```
 
+A stdin prompt is handed to Claude Code on its stdin, so its size is bounded by
+the pipe rather than by the operating system's per-argument limit (128 KiB on
+Linux). Interactive mode keeps stdin for the terminal and passes the prompt as
+an argument, so a prompt above that limit is rejected there with an explicit
+`ArgvTooLargeError`.
+
 ---
 
 ## Combining Flags
